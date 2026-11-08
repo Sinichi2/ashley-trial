@@ -215,26 +215,28 @@ Live and visual checks were run against the deployed URL. Every result, with its
   - That's fine for a single instance. A shared store such as Redis would only be needed with more than one instance.
 - **Hours and prices:** listed hours may be out of date. Attractions often show "Price not listed".
 
-## Recommended improvements
+## Improvements
 
 These came out of a code-quality review at the end of the timed session. They were left undone because the deadline was close and they were too large to change safely.
 
 1. **Split `server/data.js` (about 560 lines) by responsibility.**
    - **Providers file:** calls to Google, Open-Meteo, Nominatim and OSRM, plus normalization of their responses.
    - **Planning file:** `weekendFor`, eligibility, `score`, `pickActivities`, `extraActivities`, `pickRestaurant`.
-
-   Today these are two clear halves of one file. Splitting them makes the separation of provider calls from planning logic explicit, and means the planning tests no longer import network code. This is the highest-value item.
+   The two are two clear halves of one file. Splitting them makes the separation of provider calls from planning logic explicit, and means the planning tests no longer import network code. This is the highest-value item.
 2. **Split `web/src/App.jsx` (about 700 lines)** into focused components (venue card, forecast, filters, menu, route summary), keeping `App` for state and data fetching only.
 3. **Remove the duplicated fact fields.**
    - **API:** it still returns the older OpenStreetMap-shaped fields (`fee`, `wheelchair`, `kidFriendlyTags`) alongside their replacements (`price`, `accessibility`, `familyFeatures`). The UI has fallbacks for both, so the old fields can go.
    - **UI:** it also still handles an `error` status that the API no longer sends. That branch can go too.
 4. **Open the filters through shared state, not the DOM.** The "Edit" link next to "Personalized for" currently opens the filters by clicking the filter button via `document.getElementById`. Lifting the popover's open state into `App` would avoid reaching into the DOM.
 5. **Add a `.gitattributes` with `* text=auto eol=lf`.** Then the `deploy/` configs, which are used on Linux, always keep Unix line endings, even when the repo is checked out on Windows.
-6. **Recommended for Ashlex, not applied:** SSH hardening (key-only login, no root password login). It was deliberately not applied, because Ashlex's existing SSH access had to stay unchanged.
+6. **Close two failure-case test gaps** (also marked Not run in VERIFICATION.md):
+   - **Venue providers both down:** add a stubbed scenario to `server/check.js` where Google Places and the Nominatim fallback both fail. It should assert that activities and dining are `unavailable` with a reason code while weather stays `ok`.
+   - **Failure states in the UI:** add a browser check with a mocked `/api/plan` response that forces `unavailable`, `partial` and `unverified` sections. It should confirm each message renders, **Try again** works, and the other sections stay visible.
+7. **Recommended for Ashlex, not applied:** SSH hardening (key-only login, no root password login). It was deliberately not applied, because Ashlex's existing SSH access had to stay unchanged.
 
 ## Security
 
-- **Kept out of the source package:** `node_modules`, `web/dist`, `.env` and `.env.*`, via `.gitignore`. The developer machine has a local `.env.local` holding a key; it is excluded and never committed.
+- **Kept out of the source package:** `node_modules`, `web/dist`, `.env` and `.env.*`, via `.gitignore`.
 - **Secret scan:** run over the repo for key, password and email patterns before submission.
 - **Where the key lives:** only in `/etc/family-planner.env` on the server.
 
