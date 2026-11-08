@@ -111,6 +111,7 @@ nginx -t && systemctl reload nginx
 - **Layout (from the candidate's low-fi sketch):**
   - **Desktop:** a full-screen map. A floating top bar holds the menu, "Search location" and a filter button, which opens the filter chips. A **Recommendations** panel on the right holds the results.
   - **Mobile:** search and filter at the top, recommendation cards, and a bottom navigation bar with three tabs: Plan, Map and Info.
+- **Recommendations near you:** when a visitor shares their location ("Use my location") and is within 50 km of the chosen city, distances and ranking are measured from them, and cards say "x km from you". Otherwise distances are measured from the city centre. `getPlan` accepts an optional `from=LAT,LON` for this.
 - **Personalization:**
   - **On the homepage:** the preference chips and the Indoors only switch appear inline. The same controls are behind the filter button once results load.
   - **In the results:** a line says "Personalized for: …" with an **Edit** link.
