@@ -1,0 +1,21 @@
+[Unit]
+Description=Family Weekend Planner API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=planner
+Group=planner
+WorkingDirectory=/opt/planner/app
+EnvironmentFile=-/etc/family-planner.env
+Environment=PORT=3000 NODE_ENV=production
+ExecStart=/usr/bin/node server/server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

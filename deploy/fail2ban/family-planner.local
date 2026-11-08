@@ -1,0 +1,25 @@
+# /etc/fail2ban/jail.d/family-planner.local
+# SSH jail deliberately OFF: Ashlex's password SSH access must not be locked out by mistyped passwords.
+[sshd]
+enabled = false
+
+# One request to a honeypot path -> blocked from the website (80/443 only; SSH untouched) for 24h.
+[fwp-honeypot]
+enabled  = true
+port     = http,https
+filter   = fwp-honeypot
+logpath  = /var/log/nginx/honeypot.log
+backend  = auto   ; Ubuntu defaults to the systemd journal, which would ignore this log file
+maxretry = 1
+findtime = 1h
+bantime  = 24h
+
+# Clients that keep hitting the Nginx rate limit -> blocked from the website for 1h.
+[nginx-limit-req]
+enabled  = true
+port     = http,https
+logpath  = /var/log/nginx/error.log
+backend  = auto
+maxretry = 20
+findtime = 10m
+bantime  = 1h

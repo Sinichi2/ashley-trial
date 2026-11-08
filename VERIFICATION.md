@@ -1,0 +1,58 @@
+# Verification notes
+
+Session: 2026-11-08, 18:00-20:00 local (+08:00). Every result was actually observed; checks that weren't run say **Not run**.
+
+**Methods**
+- **Automated-stub:** `node server/check.js`, with a fixed clock and a stubbed `fetch`. No real provider is called.
+- **Automated-offline:** the same command, testing pure logic only. Node 18+, no network.
+- **Manual-live:** curl or a browser against the real public URL and the real providers.
+- **Manual-browser:** Playwright-core driving Edge on the live URL at **390x844** (mobile) and **1280x900** (desktop).
+
+Run the automated checks with:
+
+```bash
+node server/check.js
+```
+
+They all passed at 19:06 and again after the filter features were added.
+
+| Check | Method | Input or setup | Expected | Observed | Status |
+|---|---|---|---|---|---|
+| Normal city search | Manual-live | London plan with real providers (19:07) | Every section `ok`, with sources and retrieval times | Google Weather `ok`. Google Places: SEA LIFE London Aquarium and Natural History Museum. Dining: 50 Kalò di Ciro Salvo. | Pass |
+| Filters and extra options | Manual-live | London, History + Indoors only (19:10) | Two weekend picks within the filters, a labelled "Something different", dinner alternatives | Sat: Kensington Palace (History museum). Sun: SEA LIFE (noted as not matching the interest). Something different: London Zoo, labelled "Outside your filters (History, Indoors only)". Dinner: Jacuzzi, then Da Mario Kensington and Royal Lancaster London. | Pass |
+| Filter rules | Automated-stub | Indoors only, with outdoor and unknown-type venues in the test data | Outdoor and unknown venues excluded; the outdoor zoo becomes "Something different" | As expected | Pass |
+| Same-name cities: search | Manual-live | `/api/cities?q=Springfield` | Results told apart by region | Missouri, Illinois, Massachusetts, Ohio, Tennessee, Kentucky, each with its own timezone | Pass |
+| Same-name cities: selection | Manual-browser | Choose London, England after London, Ohio was shown | The guide updates to the chosen place | Found a bug: the result list opened under a cursor that hadn't moved, and hovering selected London, Ohio. After the fix, London, England is selected and the guide updates. | Pass (after fix) |
+| Weekend boundaries | Automated-offline | Fixed clock. The same UTC instant is Saturday in Los Angeles and Sunday in Auckland and Manila. Also Wednesday in London, Sunday 23:30 in New York, and Dec 31 to Jan 2027. | Saturday means this weekend, Sunday means the following one, any other day means the coming one | LA gets Nov 7-8; Auckland and Manila get Nov 14-15; the year rollover works; an invalid timezone throws | Pass |
+| Weekend boundaries, live | Manual-live | Run on local Sunday 2026-11-08 for London, Tokyo, Auckland and Springfield | Each city gets the following weekend | All returned 2026-11-14 to 11-15 | Pass |
+| One provider fails: weather timeout | Automated-stub | Google Weather and Open-Meteo both time out | Weather `unavailable` / `timeout`; venues still `ok`; the weather reasoning says not tailored | As expected | Pass |
+| One provider fails: partial forecast | Automated-stub | Only Saturday is returned | Weather `partial`, Sunday unavailable; precipitation 0 stays distinct from null | As expected | Pass |
+| One provider fails: no verified Italian | Manual-live | Longyearbyen, Svalbard (19:07) | Dining `unverified` / `no_verified_italian`; forecast and activities still visible | "We couldn’t verify a suitable Italian restaurant in this city." with the other sections rendered | Pass |
+| One provider fails: real outage | Manual-live | Overpass timing out (18:3x, before it was replaced) | Section-level errors; forecast still shows | Venue and dining sections showed their own errors; the forecast rendered | Pass |
+| Invalid key fallback | Manual-live | A 1-character key (18:45) | Falls back to OSM and Open-Meteo; key not logged | The logs show the reason only, and the plan was served from the fallbacks | Pass |
+| Generic museum rejected | Automated-stub | A museum with no age signal | Excluded before ranking | Excluded. Mutation-tested: making eligibility always true makes the test fail. | Pass |
+| Cache timestamp | Automated-stub | Second request served from cache | Keeps the original `fetchedAt` | As expected | Pass |
+| Desktop and mobile layout | Manual-browser | Live URL at 390x844 and 1280x900 (redesign build) | No horizontal scroll, no console errors | Horizontal overflow 0px at both sizes, no console errors | Pass |
+| Map + onboarding UI | Manual-browser | Live URL at 390x844 and 1280x900 | Map with venue markers, onboarding flow, no overflow | 19:12, Playwright + Edge on https://45-79-202-16.sslip.io/ (fresh context): onboarding dialog shown on first visit and skippable; "Springfield" lists Missouri / Illinois / Massachusetts; keyboard ArrowDown+Enter loads Springfield, Illinois (America/Chicago, Nov 14 and 15); 9 map markers; sections Weekend forecast, Things to do, More options, Something different, Italian dinner ideas; 9 "retrieved" lines; overflow 0px; no console errors; no 4xx/5xx responses. Same result at both viewports. Frontend agent also verified "Show route" draws the OSRM line ("About 1 min by car, 0.5 km, from your location", geolocation faked in Playwright). | Pass |
+| HTTPS and redirects | Manual-live | curl the HTTPS URL, the http URL and the bare IP from outside | 200 with a valid certificate; 301 to HTTPS | 200 with `ssl_verify_result=0`; both http and the bare IP return 301 to `https://45-79-202-16.sslip.io/` | Pass |
+| API not exposed | Manual-live | `curl http://45.79.202.16:3000/` from outside | No connection | 000 (refused). `ss` shows only `127.0.0.1:3000` listening. | Pass |
+| Deployment and persistence | Manual-live | `systemctl restart family-planner`, then SSH logout, then curl from outside with no session (11:07:49Z UTC = 19:07 local) | Every endpoint 200 | `/` 200 (0.72s), `/api/health` 200, `/api/cities?q=Springfield` 200. The service runs as `User=planner`, is enabled at boot, `NRestarts=0`. | Pass |
+| Security headers | Manual-live | `curl -sI https://45-79-202-16.sslip.io/` (19:23) | CSP, HSTS, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy present; no Nginx version | All six headers present; `Server: nginx` (no version). Playwright run after the CSP rollout: no console errors | Pass |
+| Method restriction | Manual-live | `curl -X POST /api/plan` | 403 | 403 | Pass |
+| Rate limit on paid endpoint | Manual-live | 14 rapid `GET /api/plan` from one IP (19:24) | 429 after the burst allowance (10) is used up | 200 x4, then 429 interleaved with one 200 per refill (20/min) | Pass |
+| Honeypot ban | Manual-live | Request `/wp-login.php` from the tester's own IP (19:26) | IP banned from 80/443; SSH unaffected; unban restores access | `fail2ban-client status fwp-honeypot`: 1 banned (112.207.4.233); site unreachable while banned; SSH still worked; after `unbanip` the site returned 200. First attempt found no ban: Ubuntu's fail2ban defaults to the systemd journal backend, so the jail ignored the log file. Fixed with `backend = auto`, then re-tested | Pass |
+| Photo proxy | Manual-live + Automated-offline | London plan (19:28); `/api/photo?name=https://evil.example/x.jpg`; `node server/check.js` | Photos served through our server with author; arbitrary URLs rejected | 6/6 London venues had a photo with author (e.g. London Zoo, photo by Paul Flack); photo 200 `image/jpeg` 122626 B; evil URL 400 "Invalid photo reference."; check.js rejects URL, path-traversal and query tricks | Pass |
+| Final UI: photos, My weekend, filters, footer removal | Manual-browser (Playwright + Edge, live URL) | 19:36-19:37, London; 1280x900 dark and 390x844 light | Photos load; Add-to-day buttons on every venue card; Suggest itinerary + .ics; filter popover doesn't cover the panel; disclaimer footer gone; no overflow or errors | **Desktop:** 7/7 photos loaded; 14 add buttons; Suggest itinerary produced a `.ics` with 3 VEVENTs; popover right edge 377px vs panel left edge 824px (no overlap); disclaimer gone; 0px overflow; no console errors; no 4xx/5xx. **Mobile:** 8/8 photos; 16 add buttons; "My weekend" appears after adding; Map tab loads 12 tiles; disclaimer gone; 0px overflow; no console errors. The .ics download was checked on desktop only (on mobile the test script crashed in Playwright's download handling). | Pass |
+| Filter popover vs panel at 1024px | Manual-browser (frontend agent, Playwright) | 1024x768 and 1280x900, light and dark | Popover never covers the panel | Popover right 377px vs panel left 578px (1024) / 824px (1280); Escape and Done return focus to the filter button | Pass |
+| Stale page after deploy (candidate report: mobile map blank, removed footer still showing) | Manual-live (curl + Playwright) | 19:38-19:42. Fresh mobile browser, no city, Map tab; `curl -sI /` | Map tiles load; browsers revalidate the HTML after a deploy | **Cause:** `index.html` was served without `Cache-Control`, so the candidate's browser kept an old build; a fresh browser already loaded 8 tiles. **Fix:** `expires -1` on `/` and `/index.html` (`Cache-Control: no-cache`), `max-age=31536000` on hashed `/assets/`, security headers still present. **After the fix:** mobile Map tab loads 8 tiles; the old footer is absent. The candidate needs one hard refresh to drop the old cached copy. | Pass |
+| Preference panel on the homepage + personalization shown | Manual-browser (Playwright + Edge, live URL) | 19:42, 390x844 and 1280x900, dark | Interest chips visible before search (brief: "compact preference panel"); a "How we pick" explanation; results say what they're personalized for, with Edit | Homepage shows the chips and "How we pick"; choosing Animals and then London shows "Personalized for: Animals" with Edit; 0px overflow; no console errors at both widths | Pass |
+| Recommendations based on the visitor's location | Automated-stub + Manual-live | `node server/check.js` (origin within 50 km vs a New York origin); live `GET /api/plan?...London&from=51.5194,-0.1270` (19:46) | Within 50 km of the city: distances and ranking measured from the visitor, labelled "km from you"; farther away: from the city centre | check.js passes both cases. Live response: `distanceFrom: "you"`, London Zoo 2.5 km and Hyde Park Winter Wonderland 2.5 km from the test position | Pass |
+| "Listed as closed" itinerary warning | Not run | None of the London picks were closed on the planned day | Warning shows when the listing says Closed | Code path exists but has not been exercised | Not run |
+| Reboot | Manual-live | `reboot`, then curl from outside | App back up without anyone logging in | Not performed | Not run |
+| Real-device geolocation | Manual-browser | "Use my location" on a phone over HTTPS | Permission prompt, then a suggested city to confirm | Not performed | Not run |
+
+## Demonstrating a provider failure safely
+
+1. **Live, no changes needed:** search **Longyearbyen, Svalbard**. The dining section shows "We couldn’t verify a suitable Italian restaurant in this city." while the forecast and activities stay visible.
+2. **Offline stub:** run `node server/check.js`. It includes the weather-timeout scenario (both weather providers time out, venues are still recommended, and the reasoning says it isn't weather-tailored).
+3. **A live outage:** none is recommended on the shared server. Don't edit or remove `/etc/family-planner.env` to simulate one; scenarios 1 and 2 cover failure handling without touching production secrets.
