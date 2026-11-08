@@ -1,6 +1,7 @@
 # Family Weekend Planner
 
 **Live:** https://45-79-202-16.sslip.io/
+**Source:** https://github.com/Sinichi2/ashley-trial (branch `main`)
 
 Pick a city anywhere in the world and get its actual upcoming weekend: the forecast for both days, sourced activities for kids aged 4-8, and verified Italian dinner ideas. Every venue shows its source and when the data was retrieved.
 
